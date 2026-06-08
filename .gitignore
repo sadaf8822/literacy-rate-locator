@@ -216,3 +216,13 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ==========================================
+# React / Node Settings (Added manually)
+# ==========================================
+node_modules/
+/build
+/dist
+.eslintcache
+.DS_Store
+Thumbs.db
