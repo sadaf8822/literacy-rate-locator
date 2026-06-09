@@ -1,5 +1,7 @@
 # Literacy Rate Data Visualizer
-
+Demo zip folder consists of two videos.
+Video-1: Showing the coding
+Video-2: Showing the output and explaining the usage of independant library (no dependencies required to install).
 An interactive web application designed to visualize and filter literacy rate data across different regions using an integrated map interface. 
 
 This project is built as a **standalone frontend application**, meaning it runs directly in your web browser with no complex setup or backend server required.
