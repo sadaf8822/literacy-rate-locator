@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Literacy Rate Locator - Inline Validation</title>
+    
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <style>
+        body { 
+            margin: 0; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background-color: #f0f0f0; 
+            padding: 20px; 
+            color: #333; 
+        }
+        
+        .dashboard-container { 
+            display: flex;
+            gap: 20px; 
+            max-width: 1500px; 
+            margin: 0 auto;
+            align-items: start;
+        }
+
+        .left-panel {
+            width: 420px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            flex-shrink: 0;
+        }
+
+        .top-bar { 
+            display: flex; 
+            gap: 15px; 
+            align-items: center; 
+            background-color: white;
+            padding: 20px;
+            border-radius: 6px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+        
+        .button { 
+            background-color: #3388ff; 
+            border: none; 
+            padding: 10px 20px; 
+            cursor: pointer; 
+            border-radius: 6px; 
+            font-size: 14px; 
+            font-weight: 600;
+            color: white; 
+            transition: background-color 0.2s;
+        }
+        .button:hover { 
+            background-color: #1a6fd9; 
+        }
+        
+        .records-status { 
+            font-size: 14px; 
+            color: #555; 
+            line-height: 1.4;
+            font-weight: 500;
+        }
+        
+        .status-success { color: #27ae60; font-weight: 600; }
+        .status-deleted { color: #c0392b; font-weight: 600; }
+
+        .control-panel { 
+            display: flex; 
+            flex-direction: column; 
+            gap: 24px; 
+            padding: 25px; 
+            background-color: white; 
+            border-radius: 6px; 
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06); 
+        }
+        
+        .map-wrapper {
+            flex-grow: 1;
+            height: 520px; 
+            background-color: #e5e5e5;
+            border-radius: 6px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            position: relative;
+        }
+        #map-container { 
+            height: 100%; 
+            width: 100%; 
+            position: absolute;
+            top: 0; bottom: 0; left: 0; right: 0;
+        }
+
+        .control-row { display: flex; flex-direction: column; gap: 4px; }
+        .control-group { display: flex; align-items: center; gap: 10px; font-size: 14px; width: 100%; }
+        
+        .label-container {
+            min-width: 85px;
+            display: flex;
+            flex-direction: column;
+            text-align: left;
+        }
+        .label-text { color: #333; font-weight: 600; font-size: 14px; }
+        .label-subtext { color: #7f8c8d; font-size: 11px; font-weight: 400; margin-top: 1px; line-height: 1.2; }
+        
+        .range-input { 
+            width: 55px; padding: 6px 4px; border: 1px solid #ccc; border-radius: 4px; 
+            font-size: 14px; color: #333; text-align: center;
+        }
+        .range-input:focus { border-color: #3388ff; outline: none; }
+        .range-input::-webkit-outer-spin-button,
+        .range-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        
+        .slider { 
+            flex-grow: 1; 
+            height: 6px; 
+            background: #e0e0e0; 
+            border-radius: 3px; 
+            outline: none; 
+            accent-color: #3388ff; 
+        }
+        .search-box { flex-grow: 1; padding: 8px 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
+        .search-box:focus { border-color: #3388ff; outline: none; }
+        .search-box.input-error { border-color: #e74c3c; background-color: #fdf2f2; }
+        
+        /* Inline warning typography style specifications */
+        .error-message-text {
+            color: #e74c3c;
+            font-size: 11px;
+            font-weight: 500;
+            margin-left: 95px;
+            margin-top: 4px;
+            text-align: left;
+        }
+        
+        .popup-info-table {
+            font-size: 13px;
+            line-height: 1.5;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="root"></div>
+
+    <script type="text/babel">
+        function App() {
+            const mapInstance = React.useRef(null);
+            const markersLayerRef = React.useRef(null);
+            const fileInputRef = React.useRef(null);
+            
+            // Limit Tracking States
+            const [sortMin, setSortMin] = React.useState(1);
+            const [sortMax, setSortMax] = React.useState(99);
+            const [filterMin, setFilterMin] = React.useState(1);
+            const [filterMax, setFilterMax] = React.useState(99);
+
+            // Searching Field Trackers
+            const [searchQuery, setSearchQuery] = React.useState("");
+            const [activeSearchTerm, setActiveSearchTerm] = React.useState("");
+            
+            // Error Inline Text Validation State
+            const [searchError, setSearchError] = React.useState(false);
+
+            // Loaded Dataset Engines
+            const [parsedRecords, setParsedRecords] = React.useState([]);
+            const [csvHeaders, setCsvHeaders] = React.useState({});
+            
+            const [fileStatus, setFileStatus] = React.useState("No records found/\nNo. of records");
+            const [statusClass, setStatusClass] = React.useState("");
+
+            // Initial Base Leaflet Layout Build
+            React.useEffect(() => {
+                const timer = setTimeout(() => {
+                    const mapElement = document.getElementById('map-container');
+                    if (mapElement && !mapInstance.current) {
+                        const map = L.map('map-container').setView([30.3753, 69.3451], 5); 
+                        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                            attribution: '© OpenStreetMap contributors'
+                        }).addTo(map);
+                        
+                        markersLayerRef.current = L.layerGroup().addTo(map);
+                        map.invalidateSize();
+                        mapInstance.current = map;
+                    }
+                }, 100);
+                return () => clearTimeout(timer);
+            }, []);
+
+            // Main Map Data Processing Pipeline
+            React.useEffect(() => {
+                if (parsedRecords.length === 0 || !markersLayerRef.current) return;
+
+                markersLayerRef.current.clearLayers();
+
+                const ageMin = parseInt(filterMin, 10) || 1;
+                const ageMax = parseInt(filterMax, 10) || 99;
+                const litMin = parseInt(sortMin, 10) || 1;
+                const litMax = parseInt(sortMax, 10) || 99;
+                
+                let visibleCount = 0;
+                const activeCoordinates = [];
+
+                parsedRecords.forEach((record) => {
+                    const lat = parseFloat(record[csvHeaders.latIdx]);
+                    const lng = parseFloat(record[csvHeaders.lngIdx]);
+                    const age = parseFloat(record[csvHeaders.ageIdx]);
+                    const literacy = parseFloat(record[csvHeaders.litIdx]);
+                    
+                    const genderValue = csvHeaders.genderIdx !== -1 ? record[csvHeaders.genderIdx] : "Not Specified";
+                    const cityName = csvHeaders.cityIdx !== -1 ? record[csvHeaders.cityIdx] : "Region Point";
+                    const personName = csvHeaders.nameIdx !== -1 ? record[csvHeaders.nameIdx] : "Resident";
+
+                    if (!isNaN(lat) && !isNaN(lng) && !isNaN(age) && !isNaN(literacy)) {
+                        if (age >= ageMin && age <= ageMax) {
+                            if (literacy >= litMin && literacy <= litMax) {
+                                const matchesSearch = activeSearchTerm.trim() === "" || 
+                                    personName.toLowerCase().includes(activeSearchTerm.toLowerCase().trim());
+
+                                if (matchesSearch) {
+                                    visibleCount++;
+                                    activeCoordinates.push([lat, lng]);
+
+                                    const popupContent = `
+                                        <div class="popup-info-table">
+                                            <b style="font-size: 14px; color: #2c3e50;">${cityName}</b><br>
+                                            <hr style="margin: 4px 0; border: 0; border-top: 1px solid #ddd;">
+                                            Name: <b>${personName}</b><br>
+                                            Age: <b>${age} yrs</b><br>
+                                            Gender: <b>${genderValue}</b><br>
+                                            Literacy Rate: <b>${literacy}%</b><br>
+                                            <span style="font-size: 11px; color: #7f8c8d;">Coordinates: ${lat.toFixed(4)}, ${lng.toFixed(4)}</span>
+                                        </div>
+                                    `;
+
+                                    L.marker([lat, lng])
+                                        .bindPopup(popupContent)
+                                        .addTo(markersLayerRef.current);
+                                }
+                            }
+                        }
+                    }
+                });
+
+                if (activeSearchTerm.trim() !== "") {
+                    setFileStatus(`Search active for "${activeSearchTerm}"\nFound ${visibleCount} matching entries`);
+                } else {
+                    setFileStatus(`File processed successfully!\nShowing ${visibleCount} of ${parsedRecords.length} records`);
+                }
+                setStatusClass("status-success");
+
+                if (activeCoordinates.length > 0 && mapInstance.current) {
+                    const bounds = L.latLngBounds(activeCoordinates);
+                    if (activeCoordinates.length === 1) {
+                        mapInstance.current.setView(activeCoordinates[0], 9);
+                    } else {
+                        mapInstance.current.fitBounds(bounds, { padding: [40, 40], maxZoom: 8 });
+                    }
+                }
+            }, [parsedRecords, filterMin, filterMax, sortMin, sortMax, activeSearchTerm, csvHeaders]);
+
+            const triggerFileUpload = () => {
+                fileInputRef.current.click();
+            };
+
+            const handleFileChange = (event) => {
+                const file = event.target.files[0];
+                if (!file) return;
+
+                if (!file.name.endsWith('.csv')) {
+                    alert('Please upload a valid CSV file.');
+                    event.target.value = '';
+                    return;
+                }
+
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const text = e.target.result;
+                    const lines = text.split(/\r?\n/).map(line => line.trim()).filter(line => line !== '');
+                    
+                    if (lines.length <= 1) {
+                        alert("The CSV file contains no records data lines.");
+                        return;
+                    }
+
+                    const headers = lines[0].toLowerCase().split(',').map(h => h.trim().replace(/["']/g, ""));
+                    
+                    const latIdx = headers.findIndex(h => h === 'latitude' || h === 'lat');
+                    const lngIdx = headers.findIndex(h => h === 'longitude' || h === 'lng');
+                    const ageIdx = headers.findIndex(h => h === 'age' || h.includes('age'));
+                    const litIdx = headers.findIndex(h => 
+                        h === 'literacy' || h === 'literacy_rate' || h === 'literacy rate' || h === 'rate' || h.includes('literacy')
+                    );
+                    const genderIdx = headers.findIndex(h => h === 'gender' || h.includes('gender') || h === 'sex');
+                    const cityIdx = headers.findIndex(h => h === 'city' || h === 'location' || h === 'region');
+                    const nameIdx = headers.findIndex(h => h === 'name' || h === 'user' || h === 'citizen');
+
+                    if (latIdx === -1 || lngIdx === -1 || litIdx === -1 || ageIdx === -1 || nameIdx === -1 || genderIdx === -1) {
+                        alert("Your CSV must contain explicit header columns for Name, Age, Gender, City, Literacy_rate, Latitude, and Longitude.");
+                        return;
+                    }
+
+                    setCsvHeaders({ latIdx, lngIdx, litIdx, ageIdx, genderIdx, cityIdx, nameIdx });
+
+                    const recordRows = [];
+                    for (let i = 1; i < lines.length; i++) {
+                        const columns = lines[i].split(',').map(c => c.trim().replace(/["']/g, ""));
+                        if (columns.length === headers.length) {
+                            recordRows.push(columns);
+                        }
+                    }
+
+                    setParsedRecords(recordRows);
+                    setSearchQuery("");
+                    setActiveSearchTerm("");
+                    setSearchError(false);
+                };
+                reader.readAsText(file);
+            };
+
+            // Tracks keystrokes to evaluate validation immediately as the user types
+            const handleSearchInputChange = (e) => {
+                const val = e.target.value;
+                setSearchQuery(val);
+
+                if (val.trim() === "") {
+                    setSearchError(false);
+                    return;
+                }
+
+                // If input contains numbers or a decimal float dot, toggle the UI error state
+                const containsNumbersOrFloats = /[\d\.]/.test(val);
+                setSearchError(containsNumbersOrFloats);
+            };
+
+            const handleSearchSubmit = (e) => {
+                e.preventDefault();
+                const trimmedInput = searchQuery.trim();
+                
+                if (trimmedInput === "") {
+                    setActiveSearchTerm("");
+                    setSearchError(false);
+                    return;
+                }
+
+                const containsNumbersOrFloats = /[\d\.]/.test(trimmedInput);
+                if (containsNumbersOrFloats) {
+                    setSearchError(true);
+                    return; // Terminate submission sequence silently
+                }
+
+                setSearchError(false);
+                setActiveSearchTerm(trimmedInput);
+            };
+
+            const handleClearData = () => {
+                setParsedRecords([]);
+                setCsvHeaders({});
+                setSearchQuery("");
+                setActiveSearchTerm("");
+                setSearchError(false);
+                if (markersLayerRef.current) {
+                    markersLayerRef.current.clearLayers();
+                }
+                if (mapInstance.current) {
+                    mapInstance.current.setView([30.3753, 69.3451], 5);
+                }
+                setFileStatus("File deleted successfully");
+                setStatusClass("status-deleted");
+                if (fileInputRef.current) {
+                    fileInputRef.current.value = '';
+                }
+            };
+
+            const handleNumericOnly = (event) => {
+                if (['e', 'E', '+', '-', '.'].includes(event.key)) {
+                    event.preventDefault();
+                }
+            };
+
+            const validateRangeBounds = (value, setterFunc) => {
+                let num = parseInt(value, 10);
+                if (isNaN(num) || num < 1) { setterFunc(1); } 
+                else if (num > 99) { setterFunc(99); } 
+                else { setterFunc(num); }
+            };
+
+            return (
+                <div className="dashboard-container">
+                    
+                    {/* LEFT PANEL */}
+                    <div className="left-panel">
+                        
+                        {/* Top bar containing upload and clear */}
+                        <div className="top-bar">
+                            <input 
+                                type="file" 
+                                ref={fileInputRef} 
+                                style={{ display: 'none' }} 
+                                accept=".csv"
+                                onChange={handleFileChange}
+                            />
+                            
+                            <button className="button" onClick={triggerFileUpload}>Upload</button>
+                            <button className="button" onClick={handleClearData} style={{ backgroundColor: '#7f8c8d' }}>Clear</button>
+                            
+                            <div className={`records-status ${statusClass}`}>
+                                {fileStatus.split('\n').map((line, idx) => (
+                                    <span key={idx}>{line}<br /></span>
+                                ))}
+                            </div>
+                        </div>
+                        
+                        {/* Control Custom Interface Panel Grid */}
+                        <div className="control-panel">
+                            
+                            {/* Sorting (Literacy Rate) */}
+                            <div className="control-row">
+                                <div className="control-group">
+                                    <div className="label-container">
+                                        <span className="label-text">Sorting</span>
+                                        <span className="label-subtext">Sort according to literacy rate.</span>
+                                    </div>
+                                    <input 
+                                        type="number" 
+                                        className="range-input" 
+                                        value={sortMin}
+                                        onChange={(e) => setSortMin(e.target.value)}
+                                        onBlur={(e) => validateRangeBounds(e.target.value, setSortMin)}
+                                        onKeyPress={handleNumericOnly}
+                                        min="1" max="99"
+                                    />
+                                    <input 
+                                        type="range" 
+                                        className="slider" 
+                                        min="1" max="99" 
+                                        value={sortMin} 
+                                        onChange={(e) => setSortMin(parseInt(e.target.value, 10))}
+                                    />
+                                    <input 
+                                        type="number" 
+                                        className="range-input" 
+                                        value={sortMax}
+                                        onChange={(e) => setSortMax(e.target.value)}
+                                        onBlur={(e) => validateRangeBounds(e.target.value, setSortMax)}
+                                        onKeyPress={handleNumericOnly}
+                                        min="1" max="99"
+                                    />
+                                </div>
+                            </div>
+                            
+                            {/*  Filtering (Age) */}
+                            <div className="control-row">
+                                <div className="control-group">
+                                    <div className="label-container">
+                                        <span className="label-text">Filtering</span>
+                                        <span className="label-subtext">Filter according to age.</span>
+                                    </div>
+                                    <input 
+                                        type="number" 
+                                        className="range-input" 
+                                        value={filterMin}
+                                        onChange={(e) => setFilterMin(e.target.value)}
+                                        onBlur={(e) => validateRangeBounds(e.target.value, setFilterMin)}
+                                        onKeyPress={handleNumericOnly}
+                                        min="1" max="99"
+                                    />
+                                    <input 
+                                        type="range" 
+                                        className="slider" 
+                                        min="1" max="99" 
+                                        value={filterMin} 
+                                        onChange={(e) => setFilterMin(parseInt(e.target.value, 10))}
+                                    />
+                                    <input 
+                                        type="number" 
+                                        className="range-input" 
+                                        value={filterMax}
+                                        onChange={(e) => setFilterMax(e.target.value)}
+                                        onBlur={(e) => validateRangeBounds(e.target.value, setFilterMax)}
+                                        onKeyPress={handleNumericOnly}
+                                        min="1" max="99"
+                                    />
+                                </div>
+                            </div>
+                            
+                            {/* THIRD ROW: Search Field with Inline Feedback Validation */}
+                            <div className="control-row">
+                                <form onSubmit={handleSearchSubmit} className="control-group" style={{ gap: '12px' }}>
+                                    <div className="label-container">
+                                        <span className="label-text">Search</span>
+                                    </div>
+                                    <input 
+                                        type="text" 
+                                        className={`search-box ${searchError ? 'input-error' : ''}`} 
+                                        placeholder="Search by name..." 
+                                        value={searchQuery}
+                                        onChange={handleSearchInputChange}
+                                    />
+                                    <button type="submit" className="button" disabled={searchError}>Locate</button>
+                                </form>
+                                {/* Conditional rendering framework for warning labels instead of browser alert popup modulators */}
+                                {searchError && (
+                                    <div className="error-message-text">Please enter text letters only</div>
+                                )}
+                            </div>
+
+                        </div>
+                    </div>
+                    
+                    {/* RIGHT PANEL: Map Object layout framework */}
+                    <div className="map-wrapper">
+                        <div id="map-container"></div>
+                    </div>
+
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
